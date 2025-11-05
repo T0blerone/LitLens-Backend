@@ -2,7 +2,6 @@ import express from 'express';
 import cors from 'cors';
 import * as dotenv from 'dotenv';
 
-import generateRoutes from './routes/generate.js';
 import processPhotoRoutes from './routes/processPhoto.js';
 
 dotenv.config();
@@ -18,7 +17,6 @@ app.get('/', (req, res) => {
   res.status(200).send('LitLens Backend is running!');
 });
 
-app.use('/api/generate', generateRoutes);
 app.use('/api/processphoto', processPhotoRoutes);
 
 // To add an "analyze" service:
