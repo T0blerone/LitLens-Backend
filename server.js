@@ -3,7 +3,7 @@ import cors from 'cors';
 import * as dotenv from 'dotenv';
 
 import generateRoutes from './routes/generate.js';
-import summarizeRoutes from './routes/summarize.js';
+import processPhotoRoutes from './routes/processPhoto.js';
 
 dotenv.config();
 
@@ -19,7 +19,7 @@ app.get('/', (req, res) => {
 });
 
 app.use('/api/generate', generateRoutes);
-app.use('/api/summarize', summarizeRoutes);
+app.use('/api/processphoto', processPhotoRoutes);
 
 // To add an "analyze" service:
 // 1. Create 'routes/analyze.js'
