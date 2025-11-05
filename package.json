@@ -1,0 +1,16 @@
+{
+  "name": "litlens-backend",
+  "version": "1.0.0",
+  "description": "Simple backend to proxy Gemini API calls for LitLens app",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.28.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0"
+  }
+}

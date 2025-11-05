@@ -1,0 +1,5 @@
+# Do not upload these files to Google Cloud
+.git
+.env
+node_modules
+deploy.sh
