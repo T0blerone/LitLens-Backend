@@ -1,53 +1,78 @@
 import express from 'express';
 import multer from 'multer';
-import { model, modelName, apiKey } from '../lib/gemini.js';
+import { model, apiKey } from '../lib/gemini.js';
 
 const router = express.Router();
 
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage })
 
-const PHOTO_PROMPT_TEMPLATE = `
-You are an expert visual analysis AI and librarian. Your task is to analyze the provided image of a bookshelf, identify every visible book, and return the real results in a structured CSV format.
+const VISION_PROMPT = `
+You are an expert visual analysis AI. Your task is to analyze the provided image of a bookshelf, identify every visible book, and return the raw extracted data in a structured CSV format.
 Instructions:
 Analyze the Image: Scan the entire image and identify the bounding box for every visible book (spines or covers).
 Extract Information: For each book, extract the following:
-Title: The full title of the book.
-Author: The name of the author(s).
-Coordinates: The bounding box of the book.
+Title: The raw text of the book's title, exactly as it appears.
+Author: The raw text of the author's name, exactly as it appears.
+Coordinates: The normalized bounding box for the book spine [ymin, xmin, ymax, xmax].
 Format Output: Return a single string in CSV (Comma Separated Values) format.
 The first line must be the header row: title,author,coordinates
 Each subsequent line must represent one book.
 Formatting Rules:
 Title/Author:
-If the title or author is clearly visible, include it.
-If the title or author is blurry, unreadable, or not visible, use the string Unknown.
-Ensure that every book you list, is a real recognizable book. If it is not, rescan the book to extract the data.
+Transcribe the text for the title and author as accurately as possible, even if it is blurry, partially obscured, or appears misspelled.
+Your goal is to extract the literal text you see, not to correct it or identify the real book. Output the "messed up" text exactly as you read it.
+Only use the string Unknown as a last resort if a title or author is completely unreadable or not visible (e.g., a blank spine, a solid blur, facing away).
 Enclose titles and authors in double quotes ("") to handle any commas within them.
 Coordinates:
-First, find the precise pixel coordinates for the four corners of the book's visible edges (e.g., [x_tl, y_tl, x_tr, y_tr, x_br, y_br, x_bl, y_bl]).
-Next, create a padded box by adding 10 pixels outside of each edge. For example, the new top-left x would be x_tl - 10 and the new top-left y would be y_tl - 10. The new bottom-right x would be x_br + 10 and y would be y_br + 10, and so on for all corners.
-Format these four padded corner coordinates (Top-Left, Top-Right, Bottom-Right, Bottom-Left) as a JSON-style array string.
-This entire coordinate string must be enclosed in double quotes in the CSV.
+Provide the normalized bounding box [ymin, xmin, ymax, xmax].
+All four values must be floats between 0.0 and 1.0.
+This entire array string must be enclosed in double quotes in the CSV.
 Example Output:
 title,author,coordinates
-"The Catcher in the Rye","J.D. Salinger","[90, 190, 140, 192, 141, 342, 91, 340]"
-"To Kill a Mockingbird","Harper Lee","[145, 193, 195, 194, 196, 343, 146, 341]"
-"Unknown","Unknown","[200, 195, 250, 195, 251, 344, 201, 344]"
-
+"The Crtcher in the Tye","J.D. Salnger","[0.25, 0.10, 0.45, 0.15]"
+"To Kill a Mockingbirdf","Hprper Lee","[0.25, 0.16, 0.45, 0.21]"
+"Unknown","Unknown","[0.25, 0.22, 0.45, 0.27]"
 Process the attached image and provide only the CSV-formatted string as your response.
 `;
 
-const PHOTO_SECOND_PROMPT = `
-You are an expert in puzzles, and a librarian. Your task is to take a csv table of books in format (title, author, coordinates) and validate each book to make sure it is a real title. 
-These were scanned off of the spine, so some may have an incorrect title or author entry. 
-For each row, you are to pay attention to the title and author, and ignore the coordinates. 
-You will see if the book exists as entered, if it does make sure the capitalization is correct and move on.
-If it does not, determine what book was trying to be entered and update the csv.
-Do not guess what a book is if you are missing the title or the author entirely.
-Only guess what the book is if you have sufficient evidence from the input to make a good guess.
-Your output will be only the csv, just corrected with any updates you made.
-Here is the csv:
+const VERIFICATION_PROMPT = `
+You are an expert librarian and data verification AI. Your task is to clean and verify a CSV string of book data provided by an upstream OCR model. This raw data contains the model's best guess of the text, which may be misspelled, garbled, or partially correct.
+You will receive a single CSV string as input. Your goal is to parse it, use your knowledge to identify the real book and author, and then output a new, cleaned CSV string in the exact same format.
+Instructions:
+Parse CSV: The input will be a CSV string with the header: title,author,coordinates.
+Process Each Row:
+Coordinates: Copy the coordinates value from the input to the output exactly as-is. Do not modify or analyze it.
+Verification & Correction: Use your extensive knowledge of literature to identify the most likely real book and author based on the garbled text.
+Correct obvious OCR errors and misspellings (e.g., "The Crtcher in the Tye" -> "The Catcher in the Rye"; "J.D. Salnger" -> "J.D. Salinger").
+Fix errors where letters are mistaken for numbers or vice-versa (e.g., "1q84" -> "1Q84"; "Haruk1 Murakani" -> "Haruki Murakami").
+If one field is 'Unknown' but the other is recognizable (e.g., Title: "Unknown", Author: "Steven Kng"), use the recognizable field to find the correct title or author.
+If a field is literally "Unknown" and the other field provides no context, copy it as "Unknown".
+If a field contains complete gibberish that cannot be plausibly corrected to a real title or author (e.g., "aj%@k*!"), output "Unknown" for that field.
+If the capitalization is non-standard, normalize it (e.g., Title: "THE LONG WALK", Author: "Stephen King" -> Title: "The Long Walk", Author: "Stephen King").
+Format Output:
+Your entire response must be a single CSV-formatted string.
+It must begin with the header row: title,author,coordinates
+Enclose all fields (title, author, and coordinates) in double quotes ("").
+Example Input:
+title,author,coordinates
+"The Crtcher in the Tye","J.D. Salnger","[0.25, 0.10, 0.45, 0.15]"
+"1q84","Haruk1 Murakani","[0.25, 0.16, 0.45, 0.21]"
+"Unknown","Steven Kng","[0.25, 0.22, 0.45, 0.27]"
+"Moby Dck","Herman Melvlle","[0.25, 0.28, 0.45, 0.33]"
+"The lluminatlons","Artbur Rimbaudl","[0.25, 0.34, 0.45, 0.39]"
+"aj%@k*!","as dflkj","[0.25, 0.40, 0.45, 0.45]"
+
+Example Output (Your Response):
+title,author,coordinates
+"The Catcher in the Rye","J.D. Salinger","[0.25, 0.10, 0.45, 0.15]"
+"1Q84","Haruki Murakami","[0.25, 0.16, 0.45, 0.21]"
+"The Shining","Stephen King","[0.25, 0.22, 0.45, 0.27]"
+"Moby-Dick","Herman Melville","[0.25, 0.28, 0.45, 0.33]"
+"Illuminations","Arthur Rimbaud","[0.25, 0.34, 0.45, 0.39]"
+"Unknown","Unknown","[0.25, 0.40, 0.45, 0.45]"
+
+Here is the csv input:
 `;
 
 router.post('/', upload.single('image'), async (req, res) => {
@@ -68,12 +93,12 @@ router.post('/', upload.single('image'), async (req, res) => {
     const mimeType = req.file.mimetype;
     const imageBase64 = imageBuffer.toString('base64');
 
-    const image_prompt = PHOTO_PROMPT_TEMPLATE;
+    const image_prompt = VISION_PROMPT;
 
     console.log(`Processing photo...`);
     
     const result = await model.generateContent({
-      model: modelName,
+      model: 'gemini-2.5-flash-lite',
       contents: [
         {
           role: "user",
@@ -92,26 +117,25 @@ router.post('/', upload.single('image'), async (req, res) => {
 
     const csvData = result.text;
 
-    const validation_prompt = PHOTO_SECOND_PROMPT + csvData;
+    const verification_prompt = VERIFICATION_PROMPT + csvData;
 
-    /*
     const result2 = await model.generateContent({
-      model: modelName,
+      model: 'gemini-2.5-flash-lite',
       contents: [
         {
           role: "user",
           parts: [
-            { text: validation_prompt },
+            { text: verification_prompt },
           ]
         }
       ],
     });
     
-    const new_csvData = result2.text*/
+    const new_csvData = result2.text
 
 
     console.log('Successfully processed photo.');
-    res.status(200).json({ csv: csvData });
+    res.status(200).json({ csv: new_csvData });
 
   } catch (error) {
     console.error('Error calling Gemini API:', error.message);
