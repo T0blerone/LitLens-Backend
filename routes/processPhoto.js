@@ -18,6 +18,7 @@ Coordinates: The normalized bounding box for the book spine [ymin, xmin, ymax, x
 Format Output: Return a single string in CSV (Comma Separated Values) format.
 The first line must be the header row: title,author,coordinates
 Each subsequent line must represent one book.
+If no books are found in the image, or can be determined, respond with "no books detected"
 Formatting Rules:
 Title/Author:
 Transcribe the text for the title and author as accurately as possible, even if it is blurry, partially obscured, or appears misspelled.
@@ -50,6 +51,7 @@ If one field is 'Unknown' but the other is recognizable (e.g., Title: "Unknown",
 If a field is literally "Unknown" and the other field provides no context, copy it as "Unknown".
 If a field contains complete gibberish that cannot be plausibly corrected to a real title or author (e.g., "aj%@k*!"), output "Unknown" for that field.
 If the capitalization is non-standard, normalize it (e.g., Title: "THE LONG WALK", Author: "Stephen King" -> Title: "The Long Walk", Author: "Stephen King").
+If input is "no books detected", return "no books detected"
 Format Output:
 Your entire response must be a single CSV-formatted string.
 It must begin with the header row: title,author,coordinates
